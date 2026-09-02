@@ -14,20 +14,8 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ length: 100 })
-  name!: string;
-
-  @Column({
-    unique: true,
-    length: 255,
-  })
-  email!: string;
-
-  @Column({
-    name: 'password_hash',
-    select: false,
-  })
-  passwordHash!: string;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  name!: string | null;
 
   @Column({
     type: 'enum',
@@ -38,17 +26,23 @@ export class User {
 
   @Column({
     type: 'varchar',
-    nullable: true,
+    unique: true,
   })
-  phoneNumber!: string | null;
+  phoneNumber!: string;
 
   @Column({
-    name: 'email_verified_at',
-    type: 'timestamp',
+    type: 'varchar',
+    name: 'otp_code',
     nullable: true,
-    default: null,
   })
-  emailVerifiedAt!: Date | null;
+  otpCode!: string | null;
+
+  @Column({
+    type: 'timestamp',
+    name: 'otp_expires_at',
+    nullable: true,
+  })
+  otpExpiresAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;

@@ -1,13 +1,12 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as argon2 from 'argon2';
 
 import { UsersService } from '../users/services/users.service';
 import { JwtPayload } from '../users/interface/jwt-payload.interface';
-import { LoginDto } from './dto/login.dto';
+import { SendOtpDto } from './dto/send-otp.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { User } from '../users/entities/user.entity';
-import { DeleteAccountDto } from './dto/delete-account.dto';
 
 @Injectable()
 export class AuthService {
@@ -16,31 +15,53 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async login(loginDto: LoginDto) {
-    const user = await this.usersService.findByEmailWithPassword(
-      loginDto.email,
-    );
+  async sendOtp(sendOtpDto: SendOtpDto) {
+    let user = await this.usersService.findByPhoneNumber(sendOtpDto.phoneNumber);
+
+    if (user && user.otpExpiresAt && user.otpExpiresAt > new Date()) {
+      const timeDiff = user.otpExpiresAt.getTime() - new Date().getTime();
+      if (timeDiff > 0) {
+        throw new BadRequestException('Please wait 1 minute before requesting a new OTP.');
+      }
+    }
+
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      user = await this.usersService.create({
+        phoneNumber: sendOtpDto.phoneNumber,
+      });
     }
 
-    const isPasswordValid = await argon2.verify(
-      user.passwordHash,
-      loginDto.password,
-    );
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+    // Generate a 6 digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(new Date().getTime() + 60 * 1000); // 1 minute from now
+
+    user.otpCode = otp;
+    user.otpExpiresAt = expiresAt;
+    await this.usersService.save(user);
+
+    // Mock SMS sending
+    console.log(`[Mock SMS] Sending OTP ${otp} to phone number ${sendOtpDto.phoneNumber}`);
+
+    return { message: 'OTP sent successfully' };
+  }
+
+  async verifyOtp(verifyOtpDto: VerifyOtpDto) {
+    const user = await this.usersService.findByPhoneNumber(verifyOtpDto.phoneNumber);
+
+    if (!user || !user.otpCode || user.otpCode !== verifyOtpDto.otp) {
+      throw new UnauthorizedException('Invalid OTP');
     }
 
-    // Unverified users must complete email verification before they can log in.
-    // emailVerifiedAt is the single source of truth for verification state.
-    if (user.emailVerifiedAt === null) {
-      throw new UnauthorizedException(
-        'Please verify your email before logging in.',
-      );
+    if (user.otpExpiresAt && user.otpExpiresAt < new Date()) {
+      throw new UnauthorizedException('OTP has expired');
     }
 
-    const payload: JwtPayload = { sub: user.id, email: user.email };
+    // Clear OTP after successful verification
+    user.otpCode = null;
+    user.otpExpiresAt = null;
+    await this.usersService.save(user);
+
+    const payload: JwtPayload = { sub: user.id, phoneNumber: user.phoneNumber };
     const accessToken = this.jwtService.sign(payload);
 
     return { accessToken, user };
@@ -48,26 +69,15 @@ export class AuthService {
 
   async updateProfile(user: User, updateProfileDto: UpdateProfileDto) {
     user.name = updateProfileDto.name;
-
     const updatedUser = await this.usersService.save(user);
-
     return { message: 'Profile updated successfully', user: updatedUser };
   }
 
-  async deleteAccount(userId: string, deleteAccountDto: DeleteAccountDto) {
-    const user = await this.usersService.findByIdWithPassword(userId);
+  async deleteAccount(userId: string) {
+    const user = await this.usersService.findById(userId);
 
     if (!user) {
       throw new UnauthorizedException('Authenticated user no longer exists');
-    }
-
-    const passwordIsValid = await argon2.verify(
-      user.passwordHash,
-      deleteAccountDto.password,
-    );
-
-    if (!passwordIsValid) {
-      throw new UnauthorizedException('Current password is incorrect');
     }
 
     await this.usersService.remove(user);

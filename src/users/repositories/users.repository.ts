@@ -6,9 +6,8 @@ import { User } from '../entities/user.entity';
 import { UserRole } from '../enums/user-role.enum';
 
 export interface CreateUserData {
-  name: string;
-  email: string;
-  passwordHash: string;
+  phoneNumber: string;
+  name?: string;
   role?: UserRole;
 }
 
@@ -18,14 +17,6 @@ export class UsersRepository {
     @InjectRepository(User)
     private readonly repository: Repository<User>,
   ) {}
-
-  findByIdWithPassword(id: string): Promise<User | null> {
-    return this.repository
-      .createQueryBuilder('user')
-      .addSelect('user.passwordHash')
-      .where('user.id = :id', { id })
-      .getOne();
-  }
 
   async remove(user: User): Promise<void> {
     await this.repository.delete(user.id);
@@ -37,18 +28,10 @@ export class UsersRepository {
     });
   }
 
-  findByEmail(email: string): Promise<User | null> {
+  findByPhoneNumber(phoneNumber: string): Promise<User | null> {
     return this.repository.findOne({
-      where: { email },
+      where: { phoneNumber },
     });
-  }
-
-  findByEmailWithPassword(email: string): Promise<User | null> {
-    return this.repository
-      .createQueryBuilder('user')
-      .addSelect('user.passwordHash')
-      .where('user.email = :email', { email })
-      .getOne();
   }
 
   create(data: CreateUserData): User {

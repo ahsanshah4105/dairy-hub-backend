@@ -2,7 +2,7 @@ import { Expose, Type } from 'class-transformer';
 
 import { UserResponseDto } from './user-response.dto';
 
-export class LoginResponseDto {
+export class VerifyOtpResponseDto {
   @Expose()
   accessToken!: string;
 

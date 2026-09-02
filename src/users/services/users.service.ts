@@ -10,10 +10,6 @@ import {
 export class UsersService {
   constructor(private readonly usersRepository: UsersRepository) {}
 
-  findByIdWithPassword(id: string): Promise<User | null> {
-    return this.usersRepository.findByIdWithPassword(id);
-  }
-
   save(user: User): Promise<User> {
     return this.usersRepository.save(user);
   }
@@ -26,12 +22,8 @@ export class UsersService {
     return this.usersRepository.findById(id);
   }
 
-  findByEmail(email: string): Promise<User | null> {
-    return this.usersRepository.findByEmail(email);
-  }
-
-  findByEmailWithPassword(email: string): Promise<User | null> {
-    return this.usersRepository.findByEmailWithPassword(email);
+  findByPhoneNumber(phoneNumber: string): Promise<User | null> {
+    return this.usersRepository.findByPhoneNumber(phoneNumber);
   }
 
   async create(data: CreateUserData): Promise<User> {

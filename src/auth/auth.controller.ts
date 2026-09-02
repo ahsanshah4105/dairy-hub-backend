@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Patch,
   Post,
-  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -18,59 +17,46 @@ import express from 'express';
 import { Serialize } from '../interceptors/serialize.interceptor';
 import { User } from '../users/entities/user.entity';
 import { AuthService } from './auth.service';
-import { RegistrationService } from './registration.service';
 import { ACCESS_TOKEN_COOKIE } from './constants/auth.constants';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthResponseDto } from './dto/auth-response.dto';
-import { DeleteAccountDto } from './dto/delete-account.dto';
-import { LoginDto } from './dto/login.dto';
-import { LoginResponseDto } from './dto/login-response.dto';
-import { RegisterDto } from './dto/register.dto';
+import { SendOtpDto } from './dto/send-otp.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { VerifyOtpResponseDto } from './dto/verify-otp-response.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { ResendVerificationDto } from './dto/resend-verification.dto';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly registrationService: RegistrationService,
     private readonly configService: ConfigService,
   ) {}
 
-  @Post('register')
-  @Serialize(AuthResponseDto)
-  register(@Body() registerDto: RegisterDto) {
-    return this.registrationService.register(registerDto);
+  @Post('send-otp')
+  @HttpCode(HttpStatus.OK)
+  sendOtp(@Body() sendOtpDto: SendOtpDto) {
+    return this.authService.sendOtp(sendOtpDto);
   }
 
-  @Get('verify-email')
-  verifyEmail(@Query('token') token: string) {
-    return this.registrationService.verifyEmail(token);
-  }
-
-  @Post('resend-verification')
+  @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
-  resendVerification(@Body() dto: ResendVerificationDto) {
-    return this.registrationService.resendVerificationEmail(dto.email);
-  }
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  @Serialize(LoginResponseDto)
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  @Serialize(VerifyOtpResponseDto)
+  verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
+    return this.authService.verifyOtp(verifyOtpDto);
   }
 
   // Web login: token HttpOnly cookie mein milega.
-  @Post('web/login')
+  @Post('web/verify-otp')
+  @HttpCode(HttpStatus.OK)
   @Serialize(AuthResponseDto)
-  async loginWeb(
-    @Body() loginDto: LoginDto,
+  async verifyOtpWeb(
+    @Body() verifyOtpDto: VerifyOtpDto,
     @Res({ passthrough: true })
     response: express.Response,
   ) {
-    const result = await this.authService.login(loginDto);
+    const result = await this.authService.verifyOtp(verifyOtpDto);
 
     response.cookie(ACCESS_TOKEN_COOKIE, result.accessToken, {
       ...this.getCookieOptions(),
@@ -129,17 +115,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async deleteAccount(
     @CurrentUser() user: User,
-    @Body() deleteAccountDto: DeleteAccountDto,
     @Res({ passthrough: true })
     response: Response,
   ) {
-    const result = await this.authService.deleteAccount(
-      user.id,
-      deleteAccountDto,
-    );
+    const result = await this.authService.deleteAccount(user.id);
 
     response.clearCookie(ACCESS_TOKEN_COOKIE, this.getCookieOptions());
 
     return result;
   }
 }
+

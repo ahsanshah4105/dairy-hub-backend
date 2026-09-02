@@ -8,10 +8,7 @@ export class UserResponseDto {
   name!: string;
 
   @Expose()
-  email!: string;
-
-  @Expose()
-  emailVerifiedAt!: Date | null;
+  phoneNumber!: string;
 
   @Expose()
   createdAt!: Date;
