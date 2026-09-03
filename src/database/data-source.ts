@@ -3,7 +3,8 @@ import 'reflect-metadata';
 import { config } from 'dotenv';
 import { DataSource } from 'typeorm';
 
-import { User } from '../users/entities/user.entity';
+import { AuthIdentity } from '../auth/infrastructure/persistence/auth-identity.entity';
+import { UserProfile } from '../users/infrastructure/persistence/user-profile.entity';
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 
@@ -47,7 +48,7 @@ const AppDataSource = new DataSource({
         }
       : false,
 
-  entities: [User],
+  entities: [AuthIdentity, UserProfile],
 
   migrations: [__dirname + '/migrations/*{.ts,.js}'],
 

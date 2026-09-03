@@ -1,9 +1,16 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { LoggerModule } from 'nestjs-pino';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
+import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { DomainExceptionFilter } from './shared/filters/domain-exception.filter';
 
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 const isProduction = nodeEnv === 'production';
@@ -14,6 +21,36 @@ const isProduction = nodeEnv === 'production';
       isGlobal: true,
       ignoreEnvFile: isProduction,
       envFilePath: nodeEnv === 'test' ? '.env.test' : '.env',
+    }),
+    EventEmitterModule.forRoot(),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 10,
+      },
+    ]),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: isProduction ? 'info' : 'debug',
+        transport: isProduction
+          ? undefined
+          : {
+              target: 'pino-pretty',
+              options: {
+                singleLine: true,
+              },
+            },
+      },
+    }),
+    RedisModule,
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.get<string>('REDIS_HOST'),
+          port: configService.get<number>('REDIS_PORT'),
+        },
+      }),
     }),
 
     TypeOrmModule.forRootAsync({
@@ -28,10 +65,10 @@ const isProduction = nodeEnv === 'production';
         ssl:
           configService.get<string>('DB_SSL') === 'true'
             ? {
-                rejectUnauthorized:
-                  configService.get<string>('DB_SSL_REJECT_UNAUTHORIZED') !==
-                  'false',
-              }
+              rejectUnauthorized:
+                configService.get<string>('DB_SSL_REJECT_UNAUTHORIZED') !==
+                'false',
+            }
             : false,
 
         autoLoadEntities: true,
@@ -45,8 +82,15 @@ const isProduction = nodeEnv === 'production';
       }),
     }),
 
-    UsersModule,
     AuthModule,
+    UsersModule,
+  ],
+  providers: [
+    // Register the DomainExceptionFilter globally
+    {
+      provide: APP_FILTER,
+      useClass: DomainExceptionFilter,
+    },
   ],
 })
 export class AppModule {}

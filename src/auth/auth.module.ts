@@ -2,16 +2,24 @@ import type ms from 'ms';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { UsersModule } from '../users/users.module';
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
+import { AuthController } from './presentation/auth.controller';
+import { AuthService } from './application/auth.service';
+import { JwtAuthGuard } from './presentation/guards/jwt-auth.guard';
+import { RolesGuard } from './presentation/guards/roles.guard';
+
+import { AuthIdentity } from './infrastructure/persistence/auth-identity.entity';
+import { AuthIdentityRepository } from './infrastructure/persistence/auth-identity.repository';
+import { RedisOtpRepository } from './infrastructure/redis/redis-otp.repository';
+import { RedisSessionRepository } from './infrastructure/redis/redis-session.repository';
+
+import { OTP_REPOSITORY } from './domain/ports/otp.repository';
+import { SESSION_REPOSITORY } from './domain/ports/session.repository';
 
 @Module({
   imports: [
-    UsersModule,
+    TypeOrmModule.forFeature([AuthIdentity]),
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -27,9 +35,13 @@ import { RolesGuard } from './guards/roles.guard';
   controllers: [AuthController],
   providers: [
     AuthService,
+    AuthIdentityRepository,
     JwtAuthGuard,
     RolesGuard,
+    // Port → Adapter bindings (Dependency Inversion)
+    { provide: OTP_REPOSITORY, useClass: RedisOtpRepository },
+    { provide: SESSION_REPOSITORY, useClass: RedisSessionRepository },
   ],
-  exports: [JwtAuthGuard, JwtModule, UsersModule],
+  exports: [JwtAuthGuard, JwtModule, AuthIdentityRepository],
 })
 export class AuthModule {}
