@@ -31,8 +31,8 @@ const isProduction = nodeEnv === 'production';
     ]),
     LoggerModule.forRoot({
       pinoHttp: {
-        level: isProduction ? 'info' : 'debug',
-        transport: isProduction
+        level: nodeEnv === 'test' ? 'silent' : isProduction ? 'info' : 'debug',
+        transport: (isProduction || nodeEnv === 'test')
           ? undefined
           : {
               target: 'pino-pretty',
@@ -55,31 +55,40 @@ const isProduction = nodeEnv === 'production';
 
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.getOrThrow<string>('DB_HOST'),
-        port: Number(configService.getOrThrow<string>('DB_PORT')),
-        username: configService.getOrThrow<string>('DB_USERNAME'),
-        password: configService.getOrThrow<string>('DB_PASSWORD'),
-        database: configService.getOrThrow<string>('DB_NAME'),
-        ssl:
-          configService.get<string>('DB_SSL') === 'true'
-            ? {
-              rejectUnauthorized:
-                configService.get<string>('DB_SSL_REJECT_UNAUTHORIZED') !==
-                'false',
-            }
-            : false,
-
-        autoLoadEntities: true,
-        migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
-
-        synchronize:
-          configService.getOrThrow<string>('DB_SYNCHRONIZE') === 'true',
-
-        migrationsRun:
-          configService.getOrThrow<string>('DB_RUN_MIGRATIONS') === 'true',
-      }),
+      useFactory: (configService: ConfigService) => {
+        if (nodeEnv === 'test') {
+          return {
+            type: 'better-sqlite3',
+            database: ':memory:',
+            autoLoadEntities: true,
+            synchronize: true,
+            dropSchema: true,
+            retryAttempts: 0,
+          };
+        }
+        return {
+          type: 'postgres',
+          host: configService.getOrThrow<string>('DB_HOST'),
+          port: Number(configService.getOrThrow<string>('DB_PORT')),
+          username: configService.getOrThrow<string>('DB_USERNAME'),
+          password: configService.getOrThrow<string>('DB_PASSWORD'),
+          database: configService.getOrThrow<string>('DB_NAME'),
+          ssl:
+            configService.get<string>('DB_SSL') === 'true'
+              ? {
+                  rejectUnauthorized:
+                    configService.get<string>('DB_SSL_REJECT_UNAUTHORIZED') !==
+                    'false',
+                }
+              : false,
+          autoLoadEntities: true,
+          migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
+          synchronize:
+            configService.getOrThrow<string>('DB_SYNCHRONIZE') === 'true',
+          migrationsRun:
+            configService.getOrThrow<string>('DB_RUN_MIGRATIONS') === 'true',
+        };
+      },
     }),
 
     AuthModule,

@@ -5,6 +5,14 @@ export class AuthResponseDto {
   @Expose()
   message!: string;
 
+  // --- ADD THESE TWO BACK ---
+  @Expose()
+  isRegistered!: boolean;
+
+  @Expose()
+  setupToken?: string;
+  // --------------------------
+
   @Expose()
   accessToken?: string;
 

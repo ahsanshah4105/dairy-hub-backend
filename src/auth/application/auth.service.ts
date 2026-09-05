@@ -12,7 +12,7 @@ import { OTP_REPOSITORY } from '../domain/ports/otp.repository';
 import type { ISessionRepository } from '../domain/ports/session.repository';
 import { SESSION_REPOSITORY } from '../domain/ports/session.repository';
 import { AuthIdentityRepository } from '../infrastructure/persistence/auth-identity.repository';
-import { AuthIdentity } from '../infrastructure/persistence/auth-identity.entity';
+import { AuthIdentity, UserRole } from '../infrastructure/persistence/auth-identity.entity';
 
 import { OtpCooldownError } from '../domain/errors/otp-cooldown.error';
 import { OtpExpiredError } from '../domain/errors/otp-expired.error';
@@ -26,11 +26,11 @@ import { UserAuthenticatedEvent } from '../domain/events/user-authenticated.even
 import { AccountDeletedEvent } from '../domain/events/account-deleted.event';
 import { AUTH_EVENTS } from '../../shared/events/events';
 
-const OTP_TTL_SECONDS = 300;       // 5 minutes
-const COOLDOWN_TTL_SECONDS = 60;   // 1 minute
+const OTP_TTL_SECONDS = 300;
+const COOLDOWN_TTL_SECONDS = 60;
 const MAX_OTP_ATTEMPTS = 5;
 const ATTEMPTS_WINDOW_SECONDS = 300;
-const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
+const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 @Injectable()
 export class AuthService {
@@ -43,48 +43,40 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly eventEmitter: EventEmitter2,
-  ) {}
+  ) { }
 
   async sendOtp(phoneNumber: string): Promise<{ message: string }> {
-    // 1. Cooldown check (atomic SET NX)
     const canProceed = await this.otpRepo.setCooldown(phoneNumber, COOLDOWN_TTL_SECONDS);
     if (!canProceed) {
       this.logger.warn({ msg: 'OTP request blocked by cooldown', phoneNumber });
       throw new OtpCooldownError();
     }
 
-    // 2. Generate cryptographically secure OTP
     const otp = crypto.randomInt(100000, 1000000).toString();
     const secret = this.configService.getOrThrow<string>('JWT_VERIFICATION_SECRET');
 
-    // 3. Hash OTP with HMAC
     const otpHash = crypto.createHmac('sha256', secret).update(otp).digest('hex');
 
-    // 4. Store in Redis with TTL
     await this.otpRepo.storeOtpHash(phoneNumber, otpHash, OTP_TTL_SECONDS);
 
     this.logger.log({ msg: 'OTP sent via mock SMS', phoneNumber });
-    // Dev-only console log (Pino logger stays clean)
     console.log(`[Mock SMS] Sending OTP ${otp} to phone number ${phoneNumber}`);
 
     return { message: 'OTP sent successfully' };
   }
 
   async verifyOtp(phoneNumber: string, otp: string) {
-    // 1. Attempt tracking
     const attempts = await this.otpRepo.incrementAttempts(phoneNumber, ATTEMPTS_WINDOW_SECONDS);
     if (attempts > MAX_OTP_ATTEMPTS) {
       this.logger.warn({ msg: 'Max OTP attempts reached', phoneNumber });
       throw new MaxAttemptsError();
     }
 
-    // 2. Fetch stored hash
     const storedHash = await this.otpRepo.getOtpHash(phoneNumber);
     if (!storedHash) {
       throw new OtpExpiredError();
     }
 
-    // 3. Verify HMAC (timing-safe)
     const secret = this.configService.getOrThrow<string>('JWT_VERIFICATION_SECRET');
     const inputHash = crypto.createHmac('sha256', secret).update(otp).digest('hex');
 
@@ -92,29 +84,66 @@ export class AuthService {
       throw new OtpInvalidError();
     }
 
-    // 4. Consume atomically
     await this.otpRepo.consumeOtp(phoneNumber);
     await this.otpRepo.clearAttempts(phoneNumber);
 
-    // 5. Find or create AuthIdentity (DB user created HERE, not in sendOtp)
-    const { identity, isNew } = await this.identityRepo.findOrCreate(phoneNumber);
-
-    if (isNew) {
-      this.logger.log({ msg: 'New auth identity created', userId: identity.id });
+    const identity = await this.identityRepo.findByPhoneNumber(phoneNumber);
+    if (!identity) {
+      return this.generateSetupToken(phoneNumber);
     }
 
-    // 6. Generate session + tokens
     const sessionId = uuidv4();
     const tokens = await this.generateTokens(identity, sessionId);
 
-    // 7. Emit domain event (UsersModule listens for profile creation)
     this.eventEmitter.emit(
       AUTH_EVENTS.USER_AUTHENTICATED,
-      new UserAuthenticatedEvent(identity.id, identity.phoneNumber, isNew),
+      new UserAuthenticatedEvent(identity.id, identity.phoneNumber, false),
     );
 
     return { ...tokens, identity };
   }
+
+  private generateSetupToken(phoneNumber: string) {
+    const setupToken = this.jwtService.sign(
+      { phoneNumber, scope: 'registration' },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        expiresIn: '15m',
+      },
+    );
+    return {
+      message: 'OTP verified.',
+      isRegistered: false,
+      setupToken,
+    };
+  }
+  async completeRegistration(setupToken: string, name: string, role?: UserRole) {
+    let payload;
+    try {
+      payload = this.jwtService.verify(setupToken, {
+        secret: this.configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+      });
+    } catch {
+      throw new InvalidTokenError();
+    }
+    if (payload.scope !== 'registration' || !payload.phoneNumber) {
+      throw new InvalidTokenError();
+    }
+    const identity = await this.identityRepo.createIdentity(payload.phoneNumber, role);
+    const sessionId = uuidv4();
+    const tokens = await this.generateTokens(identity, sessionId);
+    this.eventEmitter.emit(
+      AUTH_EVENTS.USER_AUTHENTICATED,
+      new UserAuthenticatedEvent(identity.id, identity.phoneNumber, true, name),
+    );
+    return {
+      message: 'Registration complete',
+      isRegistered: true,
+      ...tokens,
+      identity,
+    };
+  }
+
 
   async refreshTokens(accessToken: string, refreshToken: string) {
     const payload = this.jwtService.decode(accessToken) as any;
@@ -167,7 +196,6 @@ export class AuthService {
     await this.identityRepo.remove(identity);
     await this.sessionRepo.deleteAllSessions(userId);
 
-    // Emit event so UsersModule can clean up its profile
     this.eventEmitter.emit(
       AUTH_EVENTS.ACCOUNT_DELETED,
       new AccountDeletedEvent(userId),

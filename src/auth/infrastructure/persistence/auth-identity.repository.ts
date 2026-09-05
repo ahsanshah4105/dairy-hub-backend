@@ -2,14 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { AuthIdentity } from './auth-identity.entity';
+import { AuthIdentity, UserRole } from './auth-identity.entity';
 
 @Injectable()
 export class AuthIdentityRepository {
   constructor(
     @InjectRepository(AuthIdentity)
     private readonly repository: Repository<AuthIdentity>,
-  ) {}
+  ) { }
 
   async findById(id: string): Promise<AuthIdentity | null> {
     return this.repository.findOne({ where: { id } });
@@ -29,6 +29,14 @@ export class AuthIdentityRepository {
     identity = await this.repository.save(identity);
     return { identity, isNew: true };
   }
+
+
+  async createIdentity(phoneNumber: string, role?: any): Promise<AuthIdentity> {
+    const identity = this.repository.create({ phoneNumber, role });
+    return this.repository.save(identity);
+  }
+
+
 
   async save(identity: AuthIdentity): Promise<AuthIdentity> {
     return this.repository.save(identity);

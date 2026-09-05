@@ -6,14 +6,10 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-/**
- * AuthIdentity is owned exclusively by the AuthModule.
- * It stores authentication-related data: phone number, role, account status.
- * No cross-module foreign keys.
- */
 export enum UserRole {
-  USER = 'user',
-  ADMIN = 'admin',
+  BUYER = 'buyer',
+  SELLER = 'seller',
+  DELIVERY = 'delivery_boy'
 }
 
 @Entity({ name: 'auth_identities' })
@@ -24,7 +20,11 @@ export class AuthIdentity {
   @Column({ type: 'varchar', unique: true })
   phoneNumber!: string;
 
-  @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
+  @Column({
+    type: 'varchar',
+    nullable: true,
+    default: null,
+  })
   role!: UserRole;
 
   @CreateDateColumn({ name: 'created_at' })
